@@ -55,7 +55,7 @@ class WalletService {
           .eq('status', 'pending')
           .eq('transaction_type', 'credit');
 
-      if (response == null || (response as List).isEmpty) return 0.0;
+      if ((response as List).isEmpty) return 0.0;
 
       double total = 0.0;
       for (var transaction in response) {
@@ -80,7 +80,7 @@ class WalletService {
           .eq('user_id', userId)
           .eq('status', 'completed');
 
-      if (response == null || (response as List).isEmpty) return 0.0;
+      if ((response as List).isEmpty) return 0.0;
 
       double balance = 0.0;
       for (var transaction in response) {

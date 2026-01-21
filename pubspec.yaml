@@ -79,6 +79,7 @@ dependencies:
   # Local Notifications (using v17.0.0 to fix 'ambiguous reference' error)
   flutter_local_notifications: ^19.5.0
 
+  firebase_core: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -3,14 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../../../shared/services/supabase_service.dart';
 import '../../../tasks/presentation/screens/tasks_list_screen.dart';
 import '../../../tasks/presentation/providers/tasks_provider.dart';
 import '../../../tasks/data/models/task_model.dart';
 import '../../../wallet/presentation/screens/wallet_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../wallet/presentation/providers/wallet_provider.dart';
-import '../../../notifications/presentation/providers/notification_provider.dart';
 import '../widgets/notification_bell.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
