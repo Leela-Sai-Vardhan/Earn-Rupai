@@ -1,0 +1,462 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../shared/services/admob_service.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_text_styles.dart';
+import '../providers/tasks_provider.dart';
+import '../../data/models/task_model.dart';
+import '../../../../shared/services/task_service.dart';
+import '../../../wallet/presentation/providers/wallet_provider.dart';
+
+class TaskDetailScreen extends ConsumerStatefulWidget {
+  final String taskId;
+
+  const TaskDetailScreen({super.key, required this.taskId});
+
+  @override
+  ConsumerState<TaskDetailScreen> createState() => _TaskDetailScreenState();
+}
+
+class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
+  bool _isStarting = false;
+
+  Future<void> _startTask(TaskModel task) async {
+    setState(() => _isStarting = true);
+
+    try {
+      // Create user_task record
+      await TaskService.startTask(widget.taskId);
+
+      // Launch external URL
+      final uri = Uri.parse(task.externalUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        
+        if (!mounted) return;
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task started! Complete it and come back to mark as done.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+
+        // Refresh all relevant providers for immediate UI update
+        ref.invalidate(taskStatusProvider(widget.taskId));
+        ref.invalidate(tasksProvider);
+        ref.invalidate(pendingEarningsProvider);
+        ref.invalidate(transactionsProvider);
+      } else {
+        throw Exception('Could not launch URL');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isStarting = false);
+      }
+    }
+  }
+
+  Future<void> _showCompletionDisclaimer() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Important Warning!')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Before marking this task as completed:',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.warning,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '⚠️ ONLY mark as completed if you have:\n\n'
+                '✓ Fully completed the task as per instructions\n'
+                '✓ Received confirmation/payment from the external platform (if applicable)\n'
+                '✓ Followed all task requirements correctly\n\n'
+                '❌ DO NOT mark as completed if:\n\n'
+                '• You haven\'t finished the task\n'
+                '• You haven\'t received payment from external source\n'
+                '• You\'re unsure about task completion\n\n',
+                style: TextStyle(fontSize: 13, height: 1.5),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: const Text(
+                  '⚠️ WARNING: Marking tasks as completed without proper verification may result in:\n\n'
+                  '• Loss of potential earnings\n'
+                  '• Account suspension\n'
+                  '• Inability to claim rewards\n\n'
+                  'We cannot help if money wasn\'t credited due to improper task completion.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+            ),
+            child: const Text('I Understand, Mark Complete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      // Show Ad before completing
+      AdMobService.showInterstitialAd(
+        onAdDismissed: () {
+          _completeTask();
+        },
+      );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Load ad when screen opens so it's ready
+    AdMobService.loadInterstitialAd();
+  }
+
+  Future<void> _completeTask() async {
+    try {
+      await TaskService.completeTask(widget.taskId);
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Task submitted for review! Reward will be credited soon.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 4),
+        ),
+      );
+
+      // Refresh all relevant providers for immediate UI update
+      ref.invalidate(taskStatusProvider(widget.taskId));
+      ref.invalidate(tasksProvider);
+      ref.invalidate(totalEarningsProvider);
+      ref.invalidate(pendingEarningsProvider);
+      ref.invalidate(tasksCompletedProvider);
+      ref.invalidate(availableBalanceProvider);
+      ref.invalidate(transactionsProvider);
+      
+      // Go back
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final taskAsync = ref.watch(taskDetailProvider(widget.taskId));
+    final taskStatusAsync = ref.watch(taskStatusProvider(widget.taskId));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Task Details'),
+      ),
+      body: taskAsync.when(
+        data: (task) {
+          if (task == null) {
+            return const Center(child: Text('Task not found'));
+          }
+
+          final categoryColor = Color(TaskModel.getCategoryColor(task.category));
+
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Compact Header with reward
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.greenGradient,
+                  ),
+                  child: Row(
+                    children: [
+                      // Category badge (left side)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          TaskModel.getCategoryDisplayName(task.category),
+                          style: AppTextStyles.bodySmall(color: Colors.white).copyWith(fontSize: 12),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Reward amount (right side)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.currency_rupee, color: Colors.white, size: 18),
+                            Text(
+                              task.rewardAmount.toStringAsFixed(2),
+                              style: AppTextStyles.h3(color: Colors.white).copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Task details
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        task.title,
+                        style: AppTextStyles.h3(
+                          color: isDark ? AppColors.lightText : AppColors.darkText,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Description
+                      Text(
+                        'Description',
+                        style: AppTextStyles.h4(
+                          color: isDark ? AppColors.lightText : AppColors.darkText,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        task.description,
+                        style: AppTextStyles.bodyMedium(color: AppColors.greyText),
+                      ),
+                      const SizedBox(height: 24),
+                      
+                      // Instructions
+                      Text(
+                        'Instructions',
+                        style: AppTextStyles.h4(
+                          color: isDark ? AppColors.lightText : AppColors.darkText,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryGreen.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primaryGreen.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          task.instructions,
+                          style: AppTextStyles.bodyMedium(
+                            color: isDark ? AppColors.lightText : AppColors.darkText,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      
+                      // Company Info (if available)
+                      if (task.companyInfo != null && task.companyInfo!.isNotEmpty) ...[
+                        Text(
+                          'About Company',
+                          style: AppTextStyles.h4(
+                            color: isDark ? AppColors.lightText : AppColors.darkText,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryPurple.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: AppColors.primaryPurple.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.business,
+                                color: AppColors.primaryPurple,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  task.companyInfo!,
+                                  style: AppTextStyles.bodyMedium(
+                                    color: isDark ? AppColors.lightText : AppColors.darkText,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      const SizedBox(height: 8),
+                      
+                      // Action buttons based on status
+                      taskStatusAsync.when(
+                        data: (status) {
+                          if (status == null) {
+                            // Not started - show start button
+                            return SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isStarting ? null : () => _startTask(task),
+                                icon: _isStarting
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(Icons.play_arrow),
+                                label: Text(_isStarting ? 'Starting...' : 'Start Task'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                              ),
+                            );
+                          } else if (status == 'in_progress') {
+                            // In progress - show complete button
+                            return SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _showCompletionDisclaimer,
+                                icon: const Icon(Icons.check_circle),
+                                label: const Text('Mark as Completed'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              ),
+                            );
+                          } else if (status == 'pending_review') {
+                            // Pending review
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.warning.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.hourglass_empty, color: AppColors.warning),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Task under review. Reward will be credited soon!',
+                                      style: AppTextStyles.bodyMedium(color: AppColors.warning),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          } else {
+                            // Completed/rewarded
+                            return Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.check_circle, color: AppColors.success),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Task completed! Reward credited.',
+                                      style: AppTextStyles.bodyMedium(color: AppColors.success),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                        },
+                        loading: () => const Center(child: CircularProgressIndicator()),
+                        error: (_, __) => const SizedBox(),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stack) => Center(
+          child: Text('Error: ${error.toString()}'),
+        ),
+      ),
+    );
+  }
+}
