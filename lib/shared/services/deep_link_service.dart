@@ -1,5 +1,7 @@
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/router/app_router.dart';
 
 class DeepLinkService {
   static final _appLinks = AppLinks();
@@ -22,6 +24,8 @@ class DeepLinkService {
     final initialUri = await _appLinks.getInitialLink();
     if (initialUri != null) {
       debugPrint('🔗 Initial deep link: $initialUri');
+      // Small delay to ensure router is ready
+      await Future.delayed(const Duration(milliseconds: 500));
       _handleDeepLink(initialUri);
     }
   }
@@ -29,65 +33,58 @@ class DeepLinkService {
   /// Process the deep link URI
   static void _handleDeepLink(Uri uri) {
     debugPrint('🔍 Processing deep link: $uri');
-    debugPrint('🔍 Host: ${uri.host}');
-    debugPrint('🔍 Path: ${uri.path}');
+    debugPrint('🔍 Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
     debugPrint('🔍 Query parameters: ${uri.queryParameters}');
-    
-    // Handle HTTPS App Links from portfolio website
-    if (uri.host == 'sai-vardhan-portfolio.vercel.app' && uri.path.contains('/earn-rupai/auth/verify')) {
-      final tokenHash = uri.queryParameters['token_hash'];
-      final type = uri.queryParameters['type'];
-      final accessToken = uri.queryParameters['access_token'];
-      final refreshToken = uri.queryParameters['refresh_token'];
 
-      debugPrint('🌐 Website verification link detected');
-      debugPrint('📧 Type: $type, Has token: ${tokenHash != null}');
-
-      if (tokenHash != null && type == 'email') {
-        _handleEmailVerification(tokenHash, accessToken, refreshToken);
-      } else if (accessToken != null && refreshToken != null) {
-        _handleEmailVerification(null, accessToken, refreshToken);
-      }
+    // ── Custom scheme: earnrupai://auth/callback?success=true ──
+    if (uri.scheme == 'earnrupai' && uri.host == 'auth' && uri.path.contains('/callback')) {
+      final success = uri.queryParameters['success'] != 'false';
+      final message = uri.queryParameters['message'];
+      debugPrint('📧 Custom scheme auth callback — success: $success');
+      _navigateToVerificationScreen(success: success, message: message);
       return;
     }
-    
-    // Handle custom scheme callback (fallback)
-    if (uri.path.contains('/auth/callback')) {
+
+    // ── HTTPS App Link: sai-vardhan-portfolio.vercel.app/earn-rupai/auth/verify ──
+    if (uri.host == 'sai-vardhan-portfolio.vercel.app' &&
+        uri.path.contains('/earn-rupai/auth/verify')) {
       final tokenHash = uri.queryParameters['token_hash'];
       final type = uri.queryParameters['type'];
       final accessToken = uri.queryParameters['access_token'];
       final refreshToken = uri.queryParameters['refresh_token'];
 
-      debugPrint('📧 Custom scheme auth callback detected - Type: $type');
+      debugPrint('🌐 HTTPS App Link detected — type: $type, hasToken: ${tokenHash != null}');
 
-      if (tokenHash != null && type == 'email') {
-        _handleEmailVerification(tokenHash, accessToken, refreshToken);
-      } else if (accessToken != null && refreshToken != null) {
-        _handleEmailVerification(null, accessToken, refreshToken);
+      if ((tokenHash != null && type == 'email') ||
+          (accessToken != null && refreshToken != null)) {
+        // Supabase SDK auto-handles the session; navigate to success screen
+        _navigateToVerificationScreen(success: true);
+      } else {
+        _navigateToVerificationScreen(success: false);
       }
     }
   }
 
-  /// Handle email verification
-  static Future<void> _handleEmailVerification(
-    String? tokenHash,
-    String? accessToken,
-    String? refreshToken,
-  ) async {
-    try {
-      debugPrint('✅ Processing email verification...');
-      debugPrint('ℹ️ Token hash: ${tokenHash != null ? "Present" : "None"}');
-      debugPrint('ℹ️ Access token: ${accessToken != null ? "Present" : "None"}');
-      debugPrint('ℹ️ Refresh token: ${refreshToken != null ? "Present" : "None"}');
-      
-      // Supabase automatically handles the verification when the deep link is opened
-      // The session will be updated automatically via the SDK
-      // The auth state listener in the app will detect the change and navigate accordingly
-      
-      debugPrint('✅ Email verification completed successfully!');
-      debugPrint('ℹ️ User will be automatically logged in');
-    } catch (e) {
-      debugPrint('❌ Email verification error: $e');
+  /// Navigate to the email verification result screen
+  static void _navigateToVerificationScreen({
+    required bool success,
+    String? message,
+  }) {
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      debugPrint('⚠️ Navigator context not ready, retrying in 500ms...');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _navigateToVerificationScreen(success: success, message: message);
+      });
+      return;
     }
+
+    debugPrint('✅ Navigating to /auth/verification — success: $success');
+
+    final params = <String, String>{'success': success.toString()};
+    if (message != null) params['message'] = message;
+
+    final query = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    GoRouter.of(context).go('/auth/verification?$query');
   }
 }
