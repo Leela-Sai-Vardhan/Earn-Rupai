@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../shared/services/supabase_service.dart';
+import '../../../referral/services/referral_service.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -18,15 +19,72 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _referralCodeController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  String? _referrerName;
+  bool? _referralCodeValid;
+  bool _isValidatingCode = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _referralCodeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _validateReferralCode() async {
+    final code = _referralCodeController.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _referralCodeValid = null;
+        _referrerName = null;
+      });
+      return;
+    }
+
+    setState(() => _isValidatingCode = true);
+
+    try {
+      final referralService = ReferralService();
+      final result = await referralService.validateReferralCode(code);
+      
+      if (result != null && result['valid'] == true) {
+        if (result['profile_complete'] == true) {
+          setState(() {
+            _referralCodeValid = true;
+            _referrerName = result['referrer_name'];
+          });
+        } else {
+          setState(() {
+            _referralCodeValid = false;
+            _referrerName = null;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This referral code is not eligible (incomplete profile)'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
+      } else {
+        setState(() {
+          _referralCodeValid = false;
+          _referrerName = null;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _referralCodeValid = false;
+        _referrerName = null;
+      });
+    } finally {
+      setState(() => _isValidatingCode = false);
+    }
   }
 
   Future<void> _handleSignup() async {
@@ -35,7 +93,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      print('📝 Attempting signup with email: ${_emailController.text.trim()}');
+      debugPrint('📝 Attempting signup with email: ${_emailController.text.trim()}');
       
       // Sign up the user - profile will be created automatically by database trigger
       final response = await SupabaseService.signUp(
@@ -47,29 +105,89 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       if (!mounted) return;
 
       if (response.user != null) {
-        print('✅ User created with ID: ${response.user!.id}');
-        print('✅ Profile created automatically by database trigger');
+        debugPrint('✅ User created with ID: ${response.user!.id}');
+        debugPrint('✅ Profile created automatically by database trigger');
+        
+        // If referral code was provided, attempt to validate and use it
+        final referralCode = _referralCodeController.text.trim();
+        if (referralCode.isNotEmpty) {
+          // Wait for profile to be created by trigger (Critical for FK constraints)
+          bool profileExists = false;
+          int attempts = 0;
+          while (!profileExists && attempts < 5) {
+            try {
+              final profile = await SupabaseService.client
+                  .from('user_profiles')
+                  .select()
+                  .eq('user_id', response.user!.id)
+                  .maybeSingle();
+              
+              if (profile != null) {
+                profileExists = true;
+                debugPrint('✅ Profile found on attempt ${attempts + 1}');
+              } else {
+                debugPrint('⏳ Waiting for profile creation... ($attempts)');
+                await Future.delayed(const Duration(seconds: 1));
+                attempts++;
+              }
+            } catch (e) {
+              debugPrint('⚠️ Error checking profile: $e');
+              attempts++;
+              await Future.delayed(const Duration(seconds: 1));
+            }
+          }
+
+          if (profileExists) {
+            try {
+              final referralService = ReferralService();
+              // Validate code if not already validated
+              Map<String, dynamic>? validationResult;
+              
+              if (_referralCodeValid == true && _referrerName != null) {
+                 // Use cached result if valid
+                 // We need to re-fetch the ID though if we didn't store it, 
+                 // but since we don't store the full object, safer to re-validate.
+                 validationResult = await referralService.validateReferralCode(referralCode);
+              } else {
+                 validationResult = await referralService.validateReferralCode(referralCode);
+              }
+              
+              if (validationResult != null && validationResult['valid'] == true) {
+                // Use RPC to create referral (bypasses RLS)
+                try {
+                  await SupabaseService.client.rpc(
+                    'create_referral_link',
+                    params: {
+                      'p_referrer_id': validationResult['referrer_id'],
+                      'p_referred_user_id': response.user!.id,
+                      'p_referral_code': referralCode,
+                    },
+                  );
+                  debugPrint('✅ Referral relationship created successfully');
+                } catch (e) {
+                  debugPrint('⚠️ Failed to create referral via RPC: $e');
+                  // Don't fail signup if referral fails
+                }
+              } else {
+                debugPrint('⚠️ Referral code invalid or ignored during signup');
+              }
+            } catch (e) {
+              debugPrint('⚠️ Failed to create referral: $e');
+            }
+          } else {
+            debugPrint('❌ Profile creation timed out. Skipping referral linking.');
+          }
+        }
       }
 
-      print('✅ Signup successful!');
+      debugPrint('✅ Signup successful!');
       if (!mounted) return;
-      
-      // Show verification message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Account created! Please check your email to verify your account before logging in.',
-          ),
-          backgroundColor: AppColors.primaryGreen,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-      
-      // Navigate back to login
-      context.go('/auth/login');
+
+      // Navigate to OTP verification screen
+      context.go('/auth/otp-verify', extra: {'email': _emailController.text.trim()});
     } catch (e, stackTrace) {
-      print('❌ Signup error: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('❌ Signup error: $e');
+      debugPrint('Stack trace: $stackTrace');
       if (!mounted) return;
       
       // Show user-friendly error message
@@ -119,7 +237,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(25),
                     child: Image.asset(
-                      'assets/images/logo.png',
+                      'assets/images/logo_new.png',
                       width: 150,
                       height: 150,
                       fit: BoxFit.contain,
@@ -186,6 +304,75 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                // Referral Code Field (Optional)
+                TextFormField(
+                  controller: _referralCodeController,
+                  keyboardType: TextInputType.phone,
+                  onChanged: (_) {
+                    // Reset validation when user types
+                    if (_referralCodeValid != null) {
+                      setState(() {
+                        _referralCodeValid = null;
+                        _referrerName = null;
+                      });
+                    }
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Referral Code (Optional)',
+                    hintText: 'Enter referrer\'s phone number',
+                    prefixIcon: const Icon(Icons.card_giftcard_outlined),
+                    suffixIcon: _isValidatingCode
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : _referralCodeController.text.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(
+                                  _referralCodeValid == true
+                                      ? Icons.check_circle
+                                      : Icons.search,
+                                  color: _referralCodeValid == true
+                                      ? Colors.green
+                                      : null,
+                                ),
+                                onPressed: _validateReferralCode,
+                                tooltip: 'Validate code',
+                              )
+                            : null,
+                  ),
+                ),
+                if (_referrerName != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Valid code from $_referrerName',
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 // Signup Button
                 ElevatedButton(

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class TaskModel {
   final String id;
   final String title;
@@ -7,10 +9,15 @@ class TaskModel {
   final double rewardAmount;
   final String externalUrl;
   final String? companyInfo;
+  final String? importantNote;
   final bool isActive;
   final int maxCompletions;
+  final bool isTrending;
+  final double amountEarned;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? videoUrl;
+  final List<String>? imageUrls;
 
   TaskModel({
     required this.id,
@@ -21,13 +28,33 @@ class TaskModel {
     required this.rewardAmount,
     required this.externalUrl,
     this.companyInfo,
+    this.importantNote,
     required this.isActive,
     required this.maxCompletions,
+    this.isTrending = false,
+    this.amountEarned = 0,
     required this.createdAt,
     required this.updatedAt,
+    this.videoUrl,
+    this.imageUrls,
   });
 
   factory TaskModel.fromJson(Map<String, dynamic> json) {
+    List<String>? imageUrls;
+    final imageUrlsData = json['image_urls'];
+    if (imageUrlsData != null) {
+      if (imageUrlsData is List) {
+        imageUrls = imageUrlsData.map((e) => e.toString()).toList();
+      } else if (imageUrlsData is String && imageUrlsData.isNotEmpty) {
+        try {
+          final parsed = jsonDecode(imageUrlsData);
+          if (parsed is List) {
+            imageUrls = parsed.map((e) => e.toString()).toList();
+          }
+        } catch (_) {}
+      }
+    }
+
     return TaskModel(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -37,10 +64,15 @@ class TaskModel {
       rewardAmount: (json['reward_amount'] as num).toDouble(),
       externalUrl: json['external_url'] as String,
       companyInfo: json['company_info'] as String?,
+      importantNote: json['important_note'] as String?,
       isActive: json['is_active'] as bool? ?? true,
       maxCompletions: json['max_completions'] as int? ?? -1,
+      isTrending: json['is_trending'] as bool? ?? false,
+      amountEarned: (json['amount_earned'] as num?)?.toDouble() ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      videoUrl: json['video_url'] as String?,
+      imageUrls: imageUrls,
     );
   }
 
@@ -54,10 +86,15 @@ class TaskModel {
       'reward_amount': rewardAmount,
       'external_url': externalUrl,
       'company_info': companyInfo,
+      'important_note': importantNote,
       'is_active': isActive,
       'max_completions': maxCompletions,
+      'is_trending': isTrending,
+      'amount_earned': amountEarned,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'video_url': videoUrl,
+      'image_urls': imageUrls,
     };
   }
 

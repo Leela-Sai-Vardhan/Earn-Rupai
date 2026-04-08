@@ -47,21 +47,48 @@ class TaskCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ... existing header ...
+              // Header row: category badge + reward amount
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: categoryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: categoryColor.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      TaskModel.getCategoryDisplayName(task.category),
-                      style: AppTextStyles.caption(color: categoryColor),
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: categoryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          TaskModel.getCategoryDisplayName(task.category),
+                          style: AppTextStyles.caption(color: categoryColor),
+                        ),
+                      ),
+                      // Trending badge
+                      if (task.isTrending) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('🔥', style: TextStyle(fontSize: 11)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Trending',
+                                style: AppTextStyles.caption(color: Colors.orange[700]!),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -99,18 +126,37 @@ class TaskCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 12),
-              // Dynamic Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: onTap,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    backgroundColor: buttonColor,
-                    foregroundColor: textColor,
+              // Dynamic Button with earnings
+              Row(
+                children: [
+                  // Total earnings (always show if > 0)
+                  if (task.amountEarned > 0) ...[
+                    Icon(Icons.people_alt_outlined, size: 14, color: AppColors.primaryGreen.withValues(alpha: 0.8)),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        '₹${task.amountEarned.toStringAsFixed(0)} earned by all users.',
+                        style: AppTextStyles.caption(
+                          color: AppColors.primaryGreen,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    const Spacer(),
+                  ],
+                  // Button
+                  ElevatedButton(
+                    onPressed: onTap,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+                      backgroundColor: buttonColor,
+                      foregroundColor: textColor,
+                    ),
+                    child: Text(buttonText),
                   ),
-                  child: Text(buttonText),
-                ),
+                ],
               ),
             ],
           ),

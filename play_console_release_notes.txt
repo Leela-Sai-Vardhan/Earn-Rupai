@@ -1,0 +1,9 @@
+Release Version: 1.1.4 (Build 15)
+
+🚀 What's New:
+- Added a live scrolling dashboard marquee to display real-time earning updates from other users!
+- Updated game token denomination to 100 Tokens = ₹100 for better transparency and clarity.
+- Improved 'Exit and Collect' system in Games: A short ad will now play before leaving any game session to support the platform.
+- General dashboard UI tweaks and performance improvements.
+
+Thank you for using Earn Rupai! Keep playing and earning.

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Notification model
@@ -92,7 +93,7 @@ class NotificationDataService {
           .map((json) => NotificationModel.fromJson(json))
           .toList();
     } catch (e) {
-      print('Error fetching notifications: $e');
+      debugPrint('Error fetching notifications: $e');
       return [];
     }
   }
@@ -111,7 +112,7 @@ class NotificationDataService {
 
       return (response as List).length;
     } catch (e) {
-      print('Error getting unread count: $e');
+      debugPrint('Error getting unread count: $e');
       return 0;
     }
   }
@@ -124,7 +125,7 @@ class NotificationDataService {
           .update({'is_read': true})
           .eq('id', notificationId);
     } catch (e) {
-      print('Error marking notification as read: $e');
+      debugPrint('Error marking notification as read: $e');
     }
   }
 
@@ -140,7 +141,7 @@ class NotificationDataService {
           .eq('user_id', userId)
           .eq('is_read', false);
     } catch (e) {
-      print('Error marking all as read: $e');
+      debugPrint('Error marking all as read: $e');
     }
   }
 
@@ -152,7 +153,7 @@ class NotificationDataService {
           .delete()
           .eq('id', notificationId);
     } catch (e) {
-      print('Error deleting notification: $e');
+      debugPrint('Error deleting notification: $e');
     }
   }
 }

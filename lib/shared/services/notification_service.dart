@@ -3,12 +3,15 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/router/app_router.dart';
+import '../widgets/notification_permission_dialog.dart';
 
 /// Background message handler - must be top-level function
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('Handling background message: ${message.messageId}');
+  debugPrint('Handling background message: ${message.messageId}');
   // Handle background notification
 }
 
@@ -41,10 +44,25 @@ class NotificationService {
       // Setup notification handlers
       _setupNotificationHandlers();
 
+      // Re-save token when app comes back to foreground
+      // This gradually fixes users with missing/stale tokens
+      AppLifecycleListener(
+        onResume: () {
+          debugPrint('📱 App resumed — re-saving FCM token');
+          saveTokenIfUserLoggedIn();
+        },
+      );
+
+      // Also try saving 3 seconds after startup (Supabase session may restore slowly)
+      Future.delayed(const Duration(seconds: 3), () {
+        debugPrint('⏱️ Startup delayed token save');
+        saveTokenIfUserLoggedIn();
+      });
+
       _initialized = true;
-      print('✅ NotificationService initialized successfully');
+      debugPrint('✅ NotificationService initialized successfully');
     } catch (e) {
-      print('❌ Error initializing NotificationService: $e');
+      debugPrint('❌ Error initializing NotificationService: $e');
     }
   }
 
@@ -97,10 +115,10 @@ class NotificationService {
       );
 
       final granted = settings.authorizationStatus == AuthorizationStatus.authorized;
-      print('Notification permission granted: $granted');
+      debugPrint('Notification permission granted: $granted');
       return granted;
     } catch (e) {
-      print('Error requesting notification permission: $e');
+      debugPrint('Error requesting notification permission: $e');
       return false;
     }
   }
@@ -112,38 +130,56 @@ class NotificationService {
 
     // Get FCM token
     _fcmToken = await _firebaseMessaging.getToken();
-    print('FCM Token: $_fcmToken');
+    debugPrint('FCM Token: $_fcmToken');
 
-    // Save token to Supabase
+    // Save token to Supabase (may be skipped if user not yet logged in)
     if (_fcmToken != null) {
       await saveFCMToken(_fcmToken!);
     }
 
-    // Listen for token refresh
+    // Listen for token refresh — saves new token whenever Firebase rotates it
     _firebaseMessaging.onTokenRefresh.listen((newToken) {
       _fcmToken = newToken;
       saveFCMToken(newToken);
+      debugPrint('🔄 FCM token refreshed and saved');
     });
+
+    // Listen for auth state changes — saves token when user signs in
+    final supabase = Supabase.instance.client;
+    supabase.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn && _fcmToken != null) {
+        saveFCMToken(_fcmToken!);
+        debugPrint('🔐 Auth sign-in detected — FCM token saved');
+      }
+    });
+  }
+
+  /// Call this after a successful login to ensure the FCM token is saved.
+  /// Use when initialize() may have run before the user was authenticated.
+  Future<void> saveTokenIfUserLoggedIn() async {
+    if (_fcmToken != null) {
+      await saveFCMToken(_fcmToken!);
+    }
   }
 
   /// Setup notification handlers
   void _setupNotificationHandlers() {
     // Foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Foreground message received: ${message.notification?.title}');
+      debugPrint('Foreground message received: ${message.notification?.title}');
       _showLocalNotification(message);
     });
 
     // Message opened from terminated state
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('Notification opened from background: ${message.notification?.title}');
+      debugPrint('Notification opened from background: ${message.notification?.title}');
       _handleNotificationTap(message.data);
     });
 
     // Check for initial message (app opened from terminated state)
     _firebaseMessaging.getInitialMessage().then((RemoteMessage? message) {
       if (message != null) {
-        print('App opened from notification: ${message.notification?.title}');
+        debugPrint('App opened from notification: ${message.notification?.title}');
         _handleNotificationTap(message.data);
       }
     });
@@ -187,13 +223,13 @@ class NotificationService {
 
   /// Handle notification tap
   void _onNotificationTapped(NotificationResponse response) {
-    print('Notification tapped: ${response.payload}');
+    debugPrint('Notification tapped: ${response.payload}');
     // TODO: Navigate to appropriate screen based on payload
   }
 
   /// Handle notification tap with data
   void _handleNotificationTap(Map<String, dynamic> data) {
-    print('Handling notification tap with data: $data');
+    debugPrint('Handling notification tap with data: $data');
     // TODO: Navigate based on notification type
     final type = data['type'];
     switch (type) {
@@ -229,17 +265,17 @@ class NotificationService {
       final userId = supabase.auth.currentUser?.id;
 
       if (userId == null) {
-        print('No user logged in, skipping FCM token save');
+        debugPrint('No user logged in, skipping FCM token save');
         return;
       }
 
       await supabase.from('user_profiles').update({
         'fcm_token': token,
-      }).eq('id', userId);
+      }).eq('user_id', userId);
 
-      print('✅ FCM token saved to Supabase');
+      debugPrint('✅ FCM token saved to Supabase');
     } catch (e) {
-      print('❌ Error saving FCM token: $e');
+      debugPrint('❌ Error saving FCM token: $e');
     }
   }
 
@@ -250,5 +286,41 @@ class NotificationService {
   Future<bool> areNotificationsEnabled() async {
     final settings = await _firebaseMessaging.getNotificationSettings();
     return settings.authorizationStatus == AuthorizationStatus.authorized;
+  }
+
+  /// Check notification permission and show prompt dialog if denied.
+  /// Uses a 3-day cooldown so the user is not pestered every launch.
+  Future<void> checkAndPromptPermission(BuildContext context) async {
+    try {
+      final enabled = await areNotificationsEnabled();
+      if (enabled) return; // Permission already granted, nothing to do
+
+      // Check last-shown date from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final lastShownMs = prefs.getInt('notif_prompt_last_shown') ?? 0;
+      final lastShown = DateTime.fromMillisecondsSinceEpoch(lastShownMs);
+      final daysSince = DateTime.now().difference(lastShown).inDays;
+
+      // Only show if never shown or 3+ days have passed
+      if (daysSince < 3 && lastShownMs != 0) return;
+
+      if (!context.mounted) return;
+
+      // Save the current time so we don't show again for 3 days
+      await prefs.setInt(
+        'notif_prompt_last_shown',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      // Re-check mounted after all awaits before using context
+      if (!context.mounted) return;
+
+      // Show the permission bottom sheet
+      await NotificationPermissionDialog.show(context, () {
+        debugPrint('Notification permission dialog dismissed');
+      });
+    } catch (e) {
+      debugPrint('Error in checkAndPromptPermission: $e');
+    }
   }
 }

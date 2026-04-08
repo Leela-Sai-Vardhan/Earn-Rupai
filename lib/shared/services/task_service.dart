@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import '../../features/tasks/data/models/task_model.dart';
 
 class TaskService {
@@ -22,7 +23,7 @@ class TaskService {
           .map((json) => TaskModel.fromJson(json))
           .toList();
     } catch (e) {
-      print('Error fetching tasks: $e');
+      debugPrint('Error fetching tasks: $e');
       rethrow;
     }
   }
@@ -38,7 +39,7 @@ class TaskService {
 
       return TaskModel.fromJson(response);
     } catch (e) {
-      print('Error fetching task: $e');
+      debugPrint('Error fetching task: $e');
       return null;
     }
   }
@@ -59,10 +60,21 @@ class TaskService {
       final rewardAmount = taskResponse['reward_amount'];
       final taskTitle = taskResponse['title'];
 
+      // Get user name from user_profiles
+      final userProfileResponse = await _supabase
+          .from('user_profiles')
+          .select('full_name')
+          .eq('user_id', userId)
+          .single();
+      
+      final userName = userProfileResponse['full_name'] ?? 'Unknown User';
+
       // Create user_task record
       await _supabase.from('user_tasks').insert({
         'user_id': userId,
         'task_id': taskId,
+        'task_title': taskTitle, // Add task title for easier identification
+        'user_name': userName, // Add user name for easier identification
         'status': 'in_progress',
         'started_at': DateTime.now().toIso8601String(),
       });
@@ -77,7 +89,7 @@ class TaskService {
         'notes': 'Pending reward for: $taskTitle',
       });
     } catch (e) {
-      print('Error starting task: $e');
+      debugPrint('Error starting task: $e');
       rethrow;
     }
   }
@@ -100,7 +112,7 @@ class TaskService {
 
       // Transaction is already created in startTask, no need to create again
     } catch (e) {
-      print('Error completing task: $e');
+      debugPrint('Error completing task: $e');
       rethrow;
     }
   }
@@ -120,7 +132,7 @@ class TaskService {
 
       return response?['status'] as String?;
     } catch (e) {
-      print('Error checking task status: $e');
+      debugPrint('Error checking task status: $e');
       return null;
     }
   }
@@ -140,7 +152,7 @@ class TaskService {
         for (var item in response) item['task_id'] as String: item['status'] as String
       };
     } catch (e) {
-      print('Error fetching user task statuses: $e');
+      debugPrint('Error fetching user task statuses: $e');
       return {};
     }
   }

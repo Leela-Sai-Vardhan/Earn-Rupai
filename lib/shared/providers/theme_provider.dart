@@ -3,15 +3,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 
 // Theme mode provider
-final themeModeProvider = StateNotifierProvider<ThemeNotifier, ThemeMode>((ref) {
+final themeModeProvider = NotifierProvider<ThemeNotifier, ThemeMode>(() {
   return ThemeNotifier();
 });
 
-class ThemeNotifier extends StateNotifier<ThemeMode> {
+class ThemeNotifier extends Notifier<ThemeMode> {
   static const String _themeKey = 'theme_mode';
   
-  ThemeNotifier() : super(ThemeMode.light) {
+  @override
+  ThemeMode build() {
+    // Initialize with light, loading async in separate call or using sync shared prefs if possible.
+    // Since build is synchronous, we start with a default and load async.
+    // However, Notifier build can't be async? AsyncNotifier?
+    // Let's stick to safe default and load side-effect.
     _loadTheme();
+    return ThemeMode.light;
   }
 
   Future<void> _loadTheme() async {

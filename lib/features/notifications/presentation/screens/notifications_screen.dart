@@ -44,7 +44,7 @@ class NotificationsScreen extends ConsumerWidget {
                     Icon(
                       Icons.notifications_none,
                       size: 80,
-                      color: AppColors.greyText.withOpacity(0.5),
+                      color: AppColors.greyText.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -113,6 +113,8 @@ class NotificationsScreen extends ConsumerWidget {
       ref.invalidate(notificationsProvider);
       ref.invalidate(unreadNotificationCountProvider);
     }
+    
+    if (!context.mounted) return;
 
     // Navigate based on type
     switch (notification.type) {
@@ -173,12 +175,12 @@ class _NotificationCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: notification.isRead
                   ? (isDark ? AppColors.darkCard : Colors.white)
-                  : AppColors.primaryGreen.withOpacity(0.05),
+                  : AppColors.primaryGreen.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: notification.isRead
-                    ? AppColors.greyText.withOpacity(0.2)
-                    : AppColors.primaryGreen.withOpacity(0.3),
+                    ? AppColors.greyText.withValues(alpha: 0.2)
+                    : AppColors.primaryGreen.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
@@ -188,7 +190,7 @@ class _NotificationCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _getIconColor().withOpacity(0.1),
+                    color: _getIconColor().withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(

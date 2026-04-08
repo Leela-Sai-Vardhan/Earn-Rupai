@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import '../../features/wallet/data/models/wallet_transaction.dart';
 
 class WalletService {
@@ -18,7 +19,7 @@ class WalletService {
 
       return (response['total_earnings'] as num?)?.toDouble() ?? 0.0;
     } catch (e) {
-      print('Error fetching total earnings: $e');
+      debugPrint('Error fetching total earnings: $e');
       return 0.0;
     }
   }
@@ -37,7 +38,7 @@ class WalletService {
 
       return (response['tasks_completed'] as num?)?.toInt() ?? 0;
     } catch (e) {
-      print('Error fetching tasks completed count: $e');
+      debugPrint('Error fetching tasks completed count: $e');
       return 0;
     }
   }
@@ -63,7 +64,7 @@ class WalletService {
       }
       return total;
     } catch (e) {
-      print('Error fetching pending earnings: $e');
+      debugPrint('Error fetching pending earnings: $e');
       return 0.0;
     }
   }
@@ -95,7 +96,7 @@ class WalletService {
       }
       return balance;
     } catch (e) {
-      print('Error fetching available balance: $e');
+      debugPrint('Error fetching available balance: $e');
       return 0.0;
     }
   }
@@ -117,7 +118,7 @@ class WalletService {
           .map((json) => WalletTransaction.fromJson(json))
           .toList();
     } catch (e) {
-      print('Error fetching transactions: $e');
+      debugPrint('Error fetching transactions: $e');
       return [];
     }
   }
@@ -136,7 +137,7 @@ class WalletService {
         'notes': 'Sample task completion reward',
       });
     } catch (e) {
-      print('Error adding sample transaction: $e');
+      debugPrint('Error adding sample transaction: $e');
       rethrow;
     }
   }

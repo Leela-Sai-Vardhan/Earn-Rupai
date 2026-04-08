@@ -3,7 +3,19 @@ import '../../data/models/task_model.dart';
 import '../../../../shared/services/task_service.dart';
 
 // Selected category provider
-final selectedCategoryProvider = StateProvider<String>((ref) => 'all');
+// Selected category provider
+final selectedCategoryProvider = NotifierProvider<SelectedCategoryNotifier, String>(() {
+  return SelectedCategoryNotifier();
+});
+
+class SelectedCategoryNotifier extends Notifier<String> {
+  @override
+  String build() => 'all';
+
+  void setCategory(String category) {
+    state = category;
+  }
+}
 
 // Tasks list provider
 final tasksProvider = FutureProvider.family<List<TaskModel>, String>((ref, category) async {
@@ -25,14 +37,11 @@ final userTaskStatusesProvider = FutureProvider<Map<String, String>>((ref) async
   return await TaskService.fetchUserTaskStatuses();
 });
 
-// Provider for new tasks (last week, limited to 5)
-final newTasksProvider = FutureProvider<List<TaskModel>>((ref) async {
+// Provider for trending tasks (is_trending == true, limited to 5)
+final trendingTasksProvider = FutureProvider<List<TaskModel>>((ref) async {
   final allTasks = await TaskService.fetchTasks();
-  final oneWeekAgo = DateTime.now().subtract(const Duration(days: 7));
-  
-  // Filter tasks from last week and limit to 5
   return allTasks
-      .where((task) => task.createdAt.isAfter(oneWeekAgo))
+      .where((task) => task.isTrending)
       .take(5)
       .toList();
 });

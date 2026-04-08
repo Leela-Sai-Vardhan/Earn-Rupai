@@ -42,7 +42,7 @@ class AdMobService {
           );
         },
         onAdFailedToLoad: (err) {
-          print('Failed to load an interstitial ad: ${err.message}');
+          debugPrint('Failed to load an interstitial ad: ${err.message}');
           _isInterstitialAdReady = false;
         },
       ),
@@ -72,10 +72,104 @@ class AdMobService {
       _interstitialAd = null;
       _isInterstitialAdReady = false;
     } else {
-      print('Warning: Interstitial ad not ready, proceeding without ad');
+      debugPrint('Warning: Interstitial ad not ready, proceeding without ad');
       onAdDismissed();
       // Try to load one for next time
       loadInterstitialAd();
+    }
+  }
+
+  // ==================== REWARDED AD ====================
+  
+  static String get rewardedAdUnitId {
+    if (kDebugMode) {
+      return 'ca-app-pub-3940256099942544/5224354917'; // Test ID for rewarded ads
+    }
+    return AppConstants.adMobRewardedAdUnitId;
+  }
+
+  static RewardedAd? _rewardedAd;
+  static bool _isRewardedAdReady = false;
+
+  static void loadRewardedAd() {
+    if (!AppConstants.showAds) return;
+
+    RewardedAd.load(
+      adUnitId: rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _isRewardedAdReady = true;
+          debugPrint('✅ Rewarded ad loaded successfully');
+        },
+        onAdFailedToLoad: (err) {
+          debugPrint('❌ Failed to load rewarded ad: ${err.message}');
+          final responseInfo = err.responseInfo;
+          if (responseInfo != null) {
+            debugPrint('Adapter Responses:');
+            for (var response in responseInfo.adapterResponses) {
+              debugPrint(' - Adapter: ${response.adapterClassName}');
+              debugPrint(' - Latency: ${response.latencyMillis}ms');
+              debugPrint(' - Error: ${response.error?.message ?? "Success/No Error"}');
+            }
+          }
+          _isRewardedAdReady = false;
+        },
+      ),
+    );
+  }
+
+  static void showRewardedAd({
+    required VoidCallback onUserEarnedReward,
+    required VoidCallback onAdFailedToLoad,
+    required Function(bool earnedReward) onAdDismissed,
+  }) {
+    if (!AppConstants.showAds) {
+      onUserEarnedReward();
+      return;
+    }
+
+    if (_isRewardedAdReady && _rewardedAd != null) {
+      bool rewardEarned = false;
+
+      _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdShowedFullScreenContent: (ad) {
+          debugPrint('Rewarded ad showed full screen content');
+        },
+        onAdDismissedFullScreenContent: (ad) {
+          debugPrint('Rewarded ad dismissed');
+          ad.dispose();
+          loadRewardedAd(); // Reload for next time
+          
+          // Navigate only after ad is dismissed
+          if (rewardEarned) {
+            onUserEarnedReward();
+          }
+          onAdDismissed(rewardEarned);
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          debugPrint('Rewarded ad failed to show: ${error.message}');
+          ad.dispose();
+          loadRewardedAd();
+          onAdFailedToLoad(); // Let user proceed anyway
+        },
+      );
+
+      _rewardedAd!.show(
+        onUserEarnedReward: (ad, reward) {
+          debugPrint('User earned reward: ${reward.amount} ${reward.type}');
+          rewardEarned = true;
+          // Don't navigate here - wait for ad to dismiss
+        },
+      );
+
+      _rewardedAd = null;
+      _isRewardedAdReady = false;
+    } else {
+      debugPrint('⚠️ Rewarded ad not ready, allowing user to proceed');
+      onAdFailedToLoad(); // Let user proceed anyway
+      loadRewardedAd(); // Try to load one for next time
     }
   }
 }

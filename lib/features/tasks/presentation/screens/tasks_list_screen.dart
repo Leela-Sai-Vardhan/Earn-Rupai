@@ -6,6 +6,7 @@ import '../providers/tasks_provider.dart';
 import '../../data/models/task_model.dart';
 import '../widgets/task_card.dart';
 import '../../../../shared/services/task_service.dart';
+import '../../../../shared/services/admob_service.dart';
 import '../../../../shared/widgets/banner_ad_widget.dart';
 import 'task_detail_screen.dart';
 
@@ -19,7 +20,7 @@ class TasksListScreen extends ConsumerStatefulWidget {
 class _TasksListScreenState extends ConsumerState<TasksListScreen> {
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     final selectedCategory = ref.watch(selectedCategoryProvider);
     final tasksAsync = ref.watch(tasksProvider(selectedCategory));
 
@@ -57,10 +58,10 @@ class _TasksListScreenState extends ConsumerState<TasksListScreen> {
                     selected: isSelected,
                     onSelected: (selected) {
                       if (selected) {
-                        ref.read(selectedCategoryProvider.notifier).state = category;
+                        ref.read(selectedCategoryProvider.notifier).setCategory(category);
                       }
                     },
-                    selectedColor: AppColors.primaryGreen.withOpacity(0.2),
+                    selectedColor: AppColors.primaryGreen.withValues(alpha: 0.2),
                     checkmarkColor: AppColors.primaryGreen,
                     labelStyle: AppTextStyles.bodySmall(
                       color: isSelected ? AppColors.primaryGreen : AppColors.greyText,
@@ -82,7 +83,7 @@ class _TasksListScreenState extends ConsumerState<TasksListScreen> {
                         Icon(
                           Icons.task_outlined,
                           size: 64,
-                          color: AppColors.greyText.withOpacity(0.5),
+                          color: AppColors.greyText.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -110,17 +111,85 @@ class _TasksListScreenState extends ConsumerState<TasksListScreen> {
                           data: (statuses) => TaskCard(
                             task: task,
                             status: statuses[task.id],
-                            onTap: () {
-                              // Navigate to task detail
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => TaskDetailScreen(taskId: task.id),
+                            onTap: () async {
+                              // Preload ad while user reads the dialog
+                              AdMobService.loadRewardedAd();
+                              
+                              // Step 1: Show confirmation dialog
+                              final shouldProceed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Watch Ad to Continue'),
+                                  content: const Text('Please watch a short ad to view task details'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('Continue'),
+                                    ),
+                                  ],
                                 ),
-                              ).then((_) {
-                                // Refresh status on return
-                                ref.invalidate(userTaskStatusesProvider);
-                              });
+                              );
+
+                              if (shouldProceed != true) return;
+
+                              // Step 2: Show blocking overlay
+                              if (!context.mounted) return;
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                barrierColor: Colors.white,
+                                builder: (context) => const SizedBox.expand(),
+                              );
+
+                              // Step 3: Show rewarded ad
+                              AdMobService.showRewardedAd(
+                                onUserEarnedReward: () {
+                                  // User watched the ad completely
+                                  Navigator.pop(context); // Close blocking overlay
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TaskDetailScreen(taskId: task.id),
+                                    ),
+                                  ).then((_) {
+                                    ref.invalidate(userTaskStatusesProvider);
+                                  });
+                                },
+                                onAdFailedToLoad: () {
+                                  // Ad not available - let user proceed anyway
+                                  Navigator.pop(context); // Close blocking overlay
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Ad not available. Proceeding to task details...'),
+                                      backgroundColor: Colors.blue,
+                                    ),
+                                  );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TaskDetailScreen(taskId: task.id),
+                                    ),
+                                  ).then((_) {
+                                    ref.invalidate(userTaskStatusesProvider);
+                                  });
+                                },
+                                onAdDismissed: (bool earnedReward) {
+                                  if (!earnedReward) {
+                                    // User skipped ad
+                                    Navigator.pop(context); // Close blocking overlay
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please watch the complete ad to view task details'),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
                             },
                           ),
                           loading: () => TaskCard(
@@ -129,12 +198,77 @@ class _TasksListScreenState extends ConsumerState<TasksListScreen> {
                           ),
                           error: (_, __) => TaskCard(
                             task: task,
-                            onTap: () {
-                               Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => TaskDetailScreen(taskId: task.id),
+                            onTap: () async {
+                              // Preload ad while user reads the dialog
+                              AdMobService.loadRewardedAd();
+                              
+                              // Step 1: Show confirmation dialog
+                              final shouldProceed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Watch Ad to Continue'),
+                                  content: const Text('Please watch a short ad to view task details'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('Continue'),
+                                    ),
+                                  ],
                                 ),
+                              );
+
+                              if (shouldProceed != true) return;
+
+                              // Step 2: Show blocking overlay
+                              if (!context.mounted) return;
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                barrierColor: Colors.white,
+                                builder: (context) => const SizedBox.expand(),
+                              );
+
+                              // Step 3: Show rewarded ad
+                              AdMobService.showRewardedAd(
+                                onUserEarnedReward: () {
+                                  Navigator.pop(context); // Close blocking overlay
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TaskDetailScreen(taskId: task.id),
+                                    ),
+                                  );
+                                },
+                                onAdFailedToLoad: () {
+                                  Navigator.pop(context); // Close blocking overlay
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Ad not available. Proceeding to task details...'),
+                                      backgroundColor: Colors.blue,
+                                    ),
+                                  );
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TaskDetailScreen(taskId: task.id),
+                                    ),
+                                  );
+                                },
+                                onAdDismissed: (bool earnedReward) {
+                                  if (!earnedReward) {
+                                    Navigator.pop(context); // Close blocking overlay
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please watch the complete ad to view task details'),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                  }
+                                },
                               );
                             },
                           ),
@@ -151,7 +285,7 @@ class _TasksListScreenState extends ConsumerState<TasksListScreen> {
                     Icon(
                       Icons.error_outline,
                       size: 64,
-                      color: AppColors.error.withOpacity(0.5),
+                      color: AppColors.error.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 16),
                     Text(

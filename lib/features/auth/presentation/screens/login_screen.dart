@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../shared/services/supabase_service.dart';
+import '../../../../shared/services/notification_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -46,44 +47,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      print('🔐 Attempting login with email: ${_emailController.text.trim()}');
-      final response = await SupabaseService.signIn(
+      debugPrint('🔐 Attempting login with email: ${_emailController.text.trim()}');
+      await SupabaseService.signIn(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      print('✅ Login successful!');
+      debugPrint('✅ Login successful!');
+
+      // Save FCM token now that user is authenticated
+      // (initialize() ran before login, so userId was null at that point)
+      await NotificationService().saveTokenIfUserLoggedIn();
       
-      // Check if email is verified
-      if (response.user?.emailConfirmedAt == null) {
-        print('⚠️ Email not verified');
+      // Check if email is verified using robust service check
+      if (!SupabaseService.isEmailVerified) {
+        debugPrint('⚠️ Email not verified (Service check)');
         if (!mounted) return;
         
-        // Sign out the user
-        await SupabaseService.signOut();
+        // We do NOT sign out here anymore. 
+        // We let the AppRouter redirect to VerifyEmailPromptScreen.
+        // This allows the user to use the "I have Verified" button there.
         
+        // But we DO show a snackbar to inform them why they are being redirected
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Please verify your email before logging in. Check your inbox (and spam folder) for the verification link.',
-            ),
-            backgroundColor: AppColors.primaryOrange,
-            duration: const Duration(seconds: 8),
-            action: SnackBarAction(
-              label: 'OK',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
+          const SnackBar(
+            content: Text('Please verify your email. Redirecting to verification page...'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
           ),
         );
+        
+        // Explicit navigation to prompt (though AppRouter would do it too)
+        context.go('/auth/verify-email-prompt');
         return;
       }
 
       if (!mounted) return;
       context.go('/dashboard');
     } catch (e, stackTrace) {
-      print('❌ Login error: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('❌ Login error: $e');
+      debugPrint('Stack trace: $stackTrace');
       if (!mounted) return;
       
       String errorMessage = 'Login failed';
@@ -201,7 +204,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(25),
                     child: Image.asset(
-                      'assets/images/logo.png',
+                      'assets/images/logo_new.png',
                       width: 150,
                       height: 150,
                       fit: BoxFit.contain,

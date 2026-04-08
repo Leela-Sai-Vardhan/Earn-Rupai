@@ -6,13 +6,14 @@ class AppConstants {
 
   // AdMob Configuration 
   static const bool showAds = true; // Set to true to enable ads
-  static const String adMobAppId = 'ca-app-pub-1658916437389658~7899928820'; // App ID
-  static const String adMobBannerAdUnitId = 'ca-app-pub-1658916437389658/7935587848'; //  Banner
-  static const String adMobInterstitialAdUnitId = 'ca-app-pub-1658916437389658/6590716581'; // Interstitial
+  static const String adMobAppId = 'ca-app-pub-1658916437389658~2111427788'; // App ID (Earn Rupai - Ready)
+  static const String adMobBannerAdUnitId = 'ca-app-pub-1658916437389658/2235008293'; // Banner
+  static const String adMobInterstitialAdUnitId = 'ca-app-pub-1658916437389658/5480128475'; // Interstitial
+  static const String adMobRewardedAdUnitId = 'ca-app-pub-1658916437389658/2794255381'; // Rewarded
 
   // App Configuration
   static const String appName = 'EarnRupai';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.1.5';
 
   // Task Categories
   static const List<String> taskCategories = [
